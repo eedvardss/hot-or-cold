@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b2350">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Hot or Cold</title>
+<style>
+  /* One full-screen stage: the background is the thermometer, the arrow is the compass. */
+  :root {
+    --cold: #0b2350;
+    --ink: #ffffff;
+    --ink-soft: rgba(255, 255, 255, 0.72);
+    --shadow: rgba(0, 0, 0, 0.28);
+    --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--cold);
+    color: var(--ink);
+    font-family: var(--font);
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 1.2s ease;
+  }
+
+  .stage {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: env(safe-area-inset-top, 0px) 16px env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Arrow */
+  .arrow {
+    width: min(62vw, 340px);
+    aspect-ratio: 1;
+    max-width: 100%;
+    filter: drop-shadow(0 10px 24px var(--shadow));
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .arrow svg { width: 100%; height: 100%; display: block; will-change: transform; }
+  .arrow.nocompass svg { opacity: 0.55; }
+  body.arrived .arrow { opacity: 0; transform: scale(0.6); }
+
+  .status {
+    position: fixed;
+    left: 16px; right: 16px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+    text-align: center;
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--ink-soft);
+    text-wrap: balance;
+    pointer-events: none;
+  }
+
+  /* Start screen */
+  .start {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: env(safe-area-inset-top, 0px) 24px env(safe-area-inset-bottom, 0px);
+    background: var(--cold);
+    text-align: center;
+  }
+  .start h1 {
+    margin: 0;
+    font-size: clamp(40px, 13vw, 64px);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+  }
+  .start h1 .hot { color: #ff7a2f; }
+  .start h1 .cold { color: #7fc3ff; }
+  .start p { margin: 0; max-width: 30ch; color: var(--ink-soft); font-size: 16px; line-height: 1.45; }
+  .start button {
+    margin-top: 8px;
+    font: inherit;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--cold);
+    background: var(--ink);
+    border: 0;
+    border-radius: 999px;
+    padding: 18px 56px;
+    cursor: pointer;
+    box-shadow: 0 8px 24px var(--shadow);
+  }
+  .start button:active { transform: scale(0.97); }
+  .start button:focus-visible { outline: 3px solid #7fc3ff; outline-offset: 4px; }
+
+  /* Fire */
+  .fire {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .big-fire {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: min(48vw, 260px);
+    line-height: 1;
+    opacity: 0;
+    transform: scale(0.3);
+    transition: opacity 0.4s ease, transform 0.5s cubic-bezier(.3, 1.6, .5, 1);
+    pointer-events: none;
+  }
+  body.arrived .big-fire { opacity: 1; transform: scale(1); animation: throb 0.9s ease-in-out infinite alternate 0.5s; }
+  @keyframes throb { from { transform: scale(1); } to { transform: scale(1.12); } }
+
+  .flame {
+    position: absolute;
+    bottom: -60px;
+    line-height: 1;
+    animation: rise linear forwards;
+    will-change: transform, opacity;
+  }
+  @keyframes rise {
+    0%   { transform: translate(0, 0) scale(var(--s, 1)); opacity: 0; }
+    10%  { opacity: 1; }
+    100% { transform: translate(var(--dx, 0px), -115vh) scale(var(--s, 1)); opacity: 0.2; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body { transition: none; }
+    body.arrived .big-fire { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="start" id="start">
+  <h1><span class="hot">Hot</span> or <span class="cold">Cold</span></h1>
+  <p>Follow the arrow. The screen warms up as you get closer.</p>
+  <button id="go" type="button">Start</button>
+  <p id="startNote" style="font-size:14px">Allow location and motion access when your phone asks.</p>
+</div>
+
+<main class="stage">
+  <div class="arrow" id="arrowWrap" aria-label="Direction to target">
+    <svg viewBox="0 0 100 100" id="arrow" aria-hidden="true">
+      <path d="M50 6 L84 84 L50 66 L16 84 Z" fill="#ffffff" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
+    </svg>
+  </div>
+</main>
+
+<div class="fire" id="fire"></div>
+<div class="big-fire" aria-hidden="true">🔥</div>
+<div class="status" id="status"></div>
+
+<script>
+  // ---- Target -------------------------------------------------------------
+  // Change these, or open the page with ?lat=56.885&lon=24.179167
+  // (degrees-minutes-seconds also works: ?lat=56 53 6 N&lon=24 10 45 E)
+  const DEFAULT_TARGET = { lat: dms(56, 53, 6), lon: dms(24, 10, 45) };
+
+  const ARRIVE_M = 12;   // within this many metres: fire
+  const LEAVE_M  = 20;   // must get this far away again to stop the fire
+  const HOT_M    = 10;   // distance that counts as fully hot
+  const COLD_M   = 3000; // distance (and beyond) that counts as fully cold
+
+  // ---- Helpers ------------------------------------------------------------
+  function dms(d, m = 0, s = 0) { return d + m / 60 + s / 3600; }
+
+  function parseCoord(str) {
+    if (!str) return null;
+    const neg = /[SW]/i.test(str) || str.trim().startsWith("-");
+    const nums = str.replace(/[^\d.]+/g, " ").trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
+    if (!nums.length) return null;
+    const v = dms(nums[0], nums[1] || 0, nums[2] || 0);
+    return neg ? -v : v;
+  }
+
+  function readTarget() {
+    const q = new URLSearchParams(location.search);
+    const lat = parseCoord(q.get("lat"));
+    const lon = parseCoord(q.get("lon") || q.get("lng"));
+    if (lat != null && lon != null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return { lat, lon };
+    return DEFAULT_TARGET;
+  }
+
+  const rad = d => d * Math.PI / 180;
+  const deg = r => r * 180 / Math.PI;
+
+  function distanceM(a, b) {
+    const R = 6371000;
+    const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  function bearingDeg(a, b) {
+    const φ1 = rad(a.lat), φ2 = rad(b.lat), Δλ = rad(b.lon - a.lon);
+    const y = Math.sin(Δλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+    return (deg(Math.atan2(y, x)) + 360) % 360;
+  }
+
+  // Cold navy → blue → pale → orange → fire red
+  const STOPS = [
+    [0.00, [11, 35, 80]],
+    [0.30, [30, 96, 190]],
+    [0.55, [120, 170, 205]],
+    [0.72, [245, 170, 70]],
+    [0.88, [240, 95, 35]],
+    [1.00, [215, 30, 20]],
+  ];
+  function heatColor(t) {
+    t = Math.min(1, Math.max(0, t));
+    for (let i = 1; i < STOPS.length; i++) {
+      const [t1, c1] = STOPS[i];
+      const [t0, c0] = STOPS[i - 1];
+      if (t <= t1) {
+        const k = (t - t0) / (t1 - t0);
+        const c = c0.map((v, j) => Math.round(v + (c1[j] - v) * k));
+        return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+      }
+    }
+    return "rgb(215, 30, 20)";
+  }
+  function heatFor(d) {
+    // log scale: every halving of distance feels like a step warmer
+    return 1 - Math.log(Math.max(d, HOT_M) / HOT_M) / Math.log(COLD_M / HOT_M);
+  }
+
+  // ---- State --------------------------------------------------------------
+  const target = readTarget();
+  const $ = id => document.getElementById(id);
+  const arrowEl = $("arrow"), arrowWrap = $("arrowWrap"), statusEl = $("status"), fireEl = $("fire");
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+
+  let pos = null;           // {lat, lon, accuracy, course, speed}
+  let heading = null;       // device compass heading, degrees clockwise from north
+  let lastCompassAt = 0;
+  let shownRotation = 0;    // continuous (unwrapped) rotation actually applied
+  let arrived = false;
+  let flameTimer = null;
+
+  function setStatus(msg) { statusEl.textContent = msg || ""; }
+
+  // ---- Compass ------------------------------------------------------------
+  function screenAngle() {
+    if (screen.orientation && typeof screen.orientation.angle === "number") return screen.orientation.angle;
+    return typeof window.orientation === "number" ? window.orientation : 0;
+  }
+
+  function onOrientation(e) {
+    let h = null;
+    if (typeof e.webkitCompassHeading === "number") {
+      h = e.webkitCompassHeading;                       // iOS: already clockwise from north
+    } else if (e.absolute && typeof e.alpha === "number") {
+      h = 360 - e.alpha;                                // Android absolute: alpha is counter-clockwise
+    }
+    if (h == null || isNaN(h)) return;
+    heading = (h + screenAngle() + 360) % 360;
+    lastCompassAt = Date.now();
+  }
+
+  async function startCompass() {
+    try {
+      if (typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function") {
+        const res = await DeviceOrientationEvent.requestPermission(); // iOS needs a tap for this
+        if (res !== "granted") return false;
+      }
+    } catch (_) { return false; }
+    if ("ondeviceorientationabsolute" in window) {
+      window.addEventListener("deviceorientationabsolute", onOrientation, true);
+    } else {
+      window.addEventListener("deviceorientation", onOrientation, true);
+    }
+    return true;
+  }
+
+  // ---- Location -----------------------------------------------------------
+  function startGps() {
+    if (!("geolocation" in navigator)) { setStatus("This browser can't share your location."); return; }
+    setStatus("Finding you…");
+    navigator.geolocation.watchPosition(p => {
+      const c = p.coords;
+      pos = { lat: c.latitude, lon: c.longitude, accuracy: c.accuracy, course: c.heading, speed: c.speed };
+      update();
+    }, err => {
+      if (err.code === 1) setStatus("Location is blocked. Allow it for this site in your browser settings, then reload.");
+      else setStatus("Can't get a GPS fix yet. Try stepping outside.");
+    }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+  }
+
+  // ---- Rendering ----------------------------------------------------------
+  function update() {
+    if (!pos) return;
+    const d = distanceM(pos, target);
+
+    const color = heatColor(heatFor(d));
+    document.body.style.backgroundColor = color;
+    if (themeMeta) themeMeta.setAttribute("content", color);
+
+    if (!arrived && d <= ARRIVE_M) setArrived(true);
+    else if (arrived && d > LEAVE_M) setArrived(false);
+
+    if (arrived) setStatus("");
+    else if (pos.accuracy > 40) setStatus("Weak GPS signal…");
+    else setStatus("");
+  }
+
+  function currentHeading() {
+    if (heading != null && Date.now() - lastCompassAt < 3000) return { h: heading, live: true };
+    if (pos && pos.course != null && !isNaN(pos.course) && (pos.speed || 0) > 0.7) return { h: pos.course, live: true };
+    return { h: 0, live: false }; // no compass: arrow is drawn north-up
+  }
+
+  function frame() {
+    if (pos && !arrived) {
+      const { h, live } = currentHeading();
+      const want = (bearingDeg(pos, target) - h + 360) % 360;
+      // shortest way round from where the arrow is now, then ease towards it
+      let delta = ((want - shownRotation) % 360 + 540) % 360 - 180;
+      shownRotation += delta * 0.18;
+      arrowEl.style.transform = `rotate(${shownRotation}deg)`;
+      arrowWrap.classList.toggle("nocompass", !live);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ---- Fire ---------------------------------------------------------------
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function spawnFlame() {
+    const f = document.createElement("span");
+    f.className = "flame";
+    f.textContent = "🔥";
+    const size = 28 + Math.random() * 56;
+    const dur = 2.2 + Math.random() * 2.4;
+    f.style.left = (Math.random() * 100) + "vw";
+    f.style.fontSize = size + "px";
+    f.style.animationDuration = dur + "s";
+    f.style.setProperty("--dx", ((Math.random() - 0.5) * 120) + "px");
+    f.style.setProperty("--s", (0.8 + Math.random() * 0.6).toFixed(2));
+    fireEl.appendChild(f);
+    setTimeout(() => f.remove(), dur * 1000 + 100);
+  }
+
+  function setArrived(on) {
+    arrived = on;
+    document.body.classList.toggle("arrived", on);
+    clearInterval(flameTimer);
+    if (on) {
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 300]);
+      for (let i = 0; i < (reduceMotion ? 6 : 24); i++) setTimeout(spawnFlame, i * 40);
+      flameTimer = setInterval(spawnFlame, reduceMotion ? 900 : 140);
+    }
+  }
+
+  // ---- Screen on ----------------------------------------------------------
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch (_) {}
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && wakeLock) keepAwake();
+  });
+
+  // ---- Go -----------------------------------------------------------------
+  $("go").addEventListener("click", async () => {
+    if (!window.isSecureContext) {
+      $("startNote").textContent = "Open this page over https:// — phones only share location and compass with secure sites.";
+      return;
+    }
+    const compassOk = await startCompass(); // must run inside the tap on iPhone
+    startGps();
+    keepAwake();
+    $("start").hidden = true;
+    if (!compassOk) setStatus("Motion access was declined, so the arrow only turns while you walk.");
+    requestAnimationFrame(frame);
+  });
+</script>
+</body>
+</html>
